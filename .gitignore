@@ -1,0 +1,16 @@
+# 构建产物：随平台 / 构建配置 / IDE 生成，不进仓库
+bin/
+obj/
+out/
+dist/
+publish/
+artifacts/
+
+# IDE / 用户配置
+.vs/
+.idea/
+*.user
+*.suo
+
+# 运行时日志
+*.log

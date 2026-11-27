@@ -1,0 +1,30 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net9.0</TargetFramework>
+    <Nullable>disable</Nullable>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <AssemblyName>Verify</AssemblyName>
+    <RootNamespace>Verify</RootNamespace>
+    <LangVersion>latest</LangVersion>
+    <!-- 默认值只给 Windows IDE 兜底；跨平台时用 -p:GameDir=... -p:GameDataDir=... 覆盖 -->
+    <GameDir Condition="'$(GameDir)' == ''">D:/3rd-party-software/Steam/steamapps/common/Slay the Spire 2</GameDir>
+    <GameDataDir Condition="'$(GameDataDir)' == ''">$(GameDir)/data_sts2_windows_x86_64</GameDataDir>
+    <BaseLibDir Condition="'$(BaseLibDir)' == ''">D:/3rd-party-software/Steam/steamapps/workshop/content/2868840/3737335127/BaseLib</BaseLibDir>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Reference Include="0Harmony">
+      <HintPath>$(GameDataDir)/0Harmony.dll</HintPath>
+    </Reference>
+  </ItemGroup>
+
+  <!-- 把路径编译进程序集，运行时就不依赖当前工作目录 -->
+  <ItemGroup>
+    <AssemblyMetadata Include="RepoRoot" Value="$(MSBuildThisFileDirectory)../.." />
+    <AssemblyMetadata Include="GameDir" Value="$(GameDir)" />
+    <AssemblyMetadata Include="BaseLibDir" Value="$(BaseLibDir)" />
+  </ItemGroup>
+
+</Project>

@@ -1,0 +1,13 @@
+# 所有文本统一 LF 入库/检出：bash 脚本带 CRLF 会直接跑不起来（bad interpreter）。
+* text=auto eol=lf
+
+# Windows 专用脚本保持 CRLF。
+*.cmd text eol=crlf
+*.bat text eol=crlf
+
+# 二进制
+*.dll binary
+*.pck binary
+*.png binary
+*.jpg binary
+*.zip binary

@@ -1,0 +1,50 @@
+<Project>
+
+  <!--
+    本仓库自包含的编译设置与程序集引用（仓库根就是这个文件所在目录）。
+    游戏路径不在仓库里写死：build/ 下的构建器会自动探测 Steam 库里的游戏目录与
+    data_sts2_* 数据目录，再以 -p: 的形式注入：
+        -p:GameDir=... -p:GameDataDir=... [-p:BaseLibDir=...]
+    下面的默认值只是给 Windows 上的 IDE（VS / Rider）直接打开工程时兜底用；
+    用脚本构建时会被命令行覆盖。路径统一用正斜杠，MSBuild 在 Windows 上也接受，
+    Linux / macOS 才不会把反斜杠当成文件名的一部分。
+  -->
+  <PropertyGroup>
+    <TargetFramework>net9.0</TargetFramework>
+    <LangVersion>latest</LangVersion>
+    <Nullable>disable</Nullable>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <OutputType>Library</OutputType>
+    <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
+    <GenerateDependencyFile>false</GenerateDependencyFile>
+    <DebugType>none</DebugType>
+    <Deterministic>true</Deterministic>
+    <NoWarn>CS0436;CS0169;CS0649;CS8632</NoWarn>
+
+    <GameDir Condition="'$(GameDir)' == ''">D:/3rd-party-software/Steam/steamapps/common/Slay the Spire 2</GameDir>
+    <!-- 数据目录名随平台变化（data_sts2_windows_x86_64 / data_sts2_linuxbsd_* / …），构建脚本会传真实路径 -->
+    <GameDataDir Condition="'$(GameDataDir)' == ''">$(GameDir)/data_sts2_windows_x86_64</GameDataDir>
+    <BaseLibDir Condition="'$(BaseLibDir)' == ''">D:/3rd-party-software/Steam/steamapps/workshop/content/2868840/3737335127/BaseLib</BaseLibDir>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- 游戏本体（.NET 9 + Godot 4）、Harmony 都随游戏分发；BaseLib 来自创意工坊 -->
+    <Reference Include="sts2">
+      <HintPath>$(GameDataDir)/sts2.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="GodotSharp">
+      <HintPath>$(GameDataDir)/GodotSharp.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="0Harmony">
+      <HintPath>$(GameDataDir)/0Harmony.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="BaseLib" Condition="Exists('$(BaseLibDir)/BaseLib.dll')">
+      <HintPath>$(BaseLibDir)/BaseLib.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+  </ItemGroup>
+
+</Project>

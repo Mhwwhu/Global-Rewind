@@ -1,0 +1,18 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    仓库自带的构建器：只依赖 .NET SDK，Windows / Linux / macOS 跑同一份逻辑。
+    build.sh / build.ps1 / build.cmd 只是把它包一层的薄壳。
+  -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net9.0</TargetFramework>
+    <AssemblyName>Build</AssemblyName>
+    <RootNamespace>ModBuild</RootNamespace>
+    <Nullable>disable</Nullable>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <LangVersion>latest</LangVersion>
+    <InvariantGlobalization>true</InvariantGlobalization>
+  </PropertyGroup>
+
+</Project>

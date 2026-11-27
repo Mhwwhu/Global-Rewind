@@ -1,0 +1,19 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    只保留 GlobalRewind 自己的东西；编译设置、游戏路径和程序集引用都在
+    ../Directory.Build.props 里统一维护。
+  -->
+  <PropertyGroup>
+    <AssemblyName>GlobalRewind</AssemblyName>
+    <RootNamespace>GlobalRewind</RootNamespace>
+  </PropertyGroup>
+
+  <!-- build/ 与 tools/ 是仓库自带的构建器 / 校验工具，不能编进模组程序集 -->
+  <ItemGroup>
+    <Compile Remove="build/**" />
+    <Compile Remove="tools/**" />
+  </ItemGroup>
+
+
+</Project>
