@@ -77,6 +77,9 @@ internal static class Program
             return exitCode;
         }
 
+        // 发布用二进制：Release 构建成功后刷新 dist/，随仓库一起提交（不依赖平台，托管程序集通用）。
+        RefreshDist(repoRoot, mod, options.Configuration);
+
         if (options.NoDeploy)
         {
             Console.WriteLine("==> 跳过部署（--no-deploy）");
@@ -123,6 +126,40 @@ internal static class Program
 
         process.WaitForExit();
         return process.ExitCode;
+    }
+
+    /// <summary>
+    /// 刷新 dist/ 里的发布二进制：托管程序集与平台无关，一份就能在 Windows / Linux / macOS 上用。
+    /// 仓库提交这些文件，别人不装 SDK、不拿游戏程序集也能直接下载安装。
+    /// </summary>
+    private static void RefreshDist(string repoRoot, string mod, string configuration)
+    {
+        if (!string.Equals(configuration, "Release", StringComparison.OrdinalIgnoreCase))
+        {
+            Console.WriteLine($"==> dist 只在 Release 构建时刷新（当前是 {configuration}）");
+            return;
+        }
+
+        string distDir = Path.Combine(repoRoot, "dist");
+        Directory.CreateDirectory(distDir);
+
+        string builtDll = Path.Combine(repoRoot, "bin", configuration, mod + ".dll");
+        string manifest = Path.Combine(repoRoot, mod + ".json");
+
+        try
+        {
+            File.Copy(builtDll, Path.Combine(distDir, mod + ".dll"), overwrite: true);
+            if (File.Exists(manifest))
+            {
+                File.Copy(manifest, Path.Combine(distDir, mod + ".json"), overwrite: true);
+            }
+        }
+        catch (Exception error) when (error is IOException or UnauthorizedAccessException)
+        {
+            throw new BuildError("刷新 dist/ 失败：" + error.Message, 2);
+        }
+
+        Console.WriteLine($"==> dist -> {distDir}（发布用二进制，随仓库提交）");
     }
 
     private static void Deploy(string repoRoot, string gameDir, string mod, string configuration)

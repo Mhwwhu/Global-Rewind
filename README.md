@@ -34,7 +34,8 @@
 ### 手动安装
 
 1. **完全退出游戏**（运行中的进程会锁住已加载的 DLL）。
-2. 准备两个文件：`GlobalRewind.dll` 与 `GlobalRewind.json`（清单）。自己构建的话在 `bin/Release/` 下。
+2. 取两个文件：`dist/GlobalRewind.dll` 与 `dist/GlobalRewind.json`（清单）。
+   仓库里已经放了发布用的二进制，每次 Release 构建会自动刷新；也可以按下面的「从源码构建」自己生成。
 3. 在游戏根目录下建 `mods/GlobalRewind/`，把两个文件放进去：
 
    ```
@@ -71,6 +72,9 @@ dotnet run --project build --  # 任意平台直接调用
 bash build.sh --game "D:/Steam/steamapps/common/Slay the Spire 2"
 STS2_GAME_DIR="/path/to/Slay the Spire 2" bash build.sh
 ```
+
+Release 构建成功后会自动刷新 `dist/GlobalRewind.dll` 与清单副本 —— 那是给人直接下载安装的发布二进制，
+发版时连同 `dist/` 一起提交（托管程序集与平台无关，一份就能在 Windows / Linux / macOS 上用）。
 
 ## 卸载
 
@@ -549,6 +553,10 @@ dotnet run -c Release --project tools/UiLayoutTest
 
 部署后重启游戏生效。日志在 `%APPDATA%\SlayTheSpire2\logs\godot.log`，过滤 `[GlobalRewind]`。
 
+`bin/`、`obj/` 等中间产物不入库；`dist/` 里的 `<Mod>.dll` + 清单副本是**发布用二进制**，
+随仓库提交，每次 Release 构建由 `build/` 自动刷新。编译需要本机的游戏程序集
+（`data_sts2_*/sts2.dll`、`GodotSharp.dll`、`0Harmony.dll`），这些 DLL 不随仓库分发。
+
 ### UI 布局随机测试
 
 `tools/UiLayoutTest` 直接编译 `Presentation/TreeLayout.cs` 与契约源码（不启动游戏），
@@ -677,6 +685,7 @@ ModEntry（组合根）
 │   ├── Build.csproj
 │   └── Program.cs
 ├── build.sh / build.ps1 / build.cmd   # 薄壳入口
+├── dist/                          # 发布用二进制（<Mod>.dll + 清单副本），随仓库提交
 ├── tools/
 │   ├── Verify/                    # 静态校验：补丁目标 / 字段 / 成员是否还在
 │   └── UiLayoutTest/              # 树布局随机测试（不启动游戏）
