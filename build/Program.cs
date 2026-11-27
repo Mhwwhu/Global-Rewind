@@ -51,8 +51,7 @@ internal static class Program
             return 0;
         }
 
-        string repoRoot = FindRepoRoot();
-        string mod = Path.GetFileName(repoRoot);
+        string repoRoot = FindRepoRoot(out string mod);
         string project = Path.Combine(repoRoot, mod + ".csproj");
         if (!File.Exists(project))
         {
@@ -171,26 +170,34 @@ internal static class Program
 
     // ---------------------------------------------------------------- 仓库
 
-    private static string FindRepoRoot()
+    private static string FindRepoRoot(out string mod)
     {
         foreach (string start in new[] { Directory.GetCurrentDirectory(), AppContext.BaseDirectory })
         {
             DirectoryInfo current = new DirectoryInfo(start);
             while (current != null)
             {
-                // 仓库根 = 目录名与工程文件同名的那个目录（<ModName>/<ModName>.csproj）。
-                string candidate = Path.Combine(current.FullName, current.Name + ".csproj");
-                if (File.Exists(candidate))
+                // 仓库根 = 顶层只有一个模组工程、且旁边有同名清单的那个目录。
+                // 不按目录名判断：`git clone` 出来的目录名是仓库名（Global-Rewind），和模组名不同；
+                // 也不能只看 csproj —— build/ 下就有 Build.csproj。
+                string[] projects = Directory.GetFiles(current.FullName, "*.csproj", SearchOption.TopDirectoryOnly);
+                if (projects.Length == 1)
                 {
-                    return current.FullName;
+                    string stem = Path.GetFileNameWithoutExtension(projects[0]);
+                    if (File.Exists(Path.Combine(current.FullName, stem + ".json")))
+                    {
+                        mod = stem;
+                        return current.FullName;
+                    }
                 }
 
                 current = current.Parent;
             }
         }
 
+        mod = null;
         throw new BuildError(
-            "找不到仓库根目录（需要 <ModName>/<ModName>.csproj）。\n" +
+            "找不到仓库根目录（需要仓库根下有一个 <ModName>.csproj）。\n" +
             "   请在仓库内运行：dotnet run --project build", 1);
     }
 

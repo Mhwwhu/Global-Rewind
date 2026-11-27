@@ -39,8 +39,9 @@ internal static class Program
         // 元数据里是 .../tools/Verify/../..，先规范化，否则目录名会取成 ".."。
         repoRoot = Path.GetFullPath(repoRoot);
 
-        // 仓库根就是这个模组目录：模组名 = 目录名，校验清单在 <仓库根>/verify/targets.json。
-        string mod = Path.GetFileName(repoRoot.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
+        // 仓库根就是这个模组目录：模组名取仓库根下的工程名（不取目录名 —— clone 出来的目录名是仓库名），
+        // 校验清单在 <仓库根>/verify/targets.json。
+        string mod = ResolveModName(repoRoot);
         string targetsPath = Path.Combine(repoRoot, "verify", "targets.json");
 
         if (!File.Exists(targetsPath))
@@ -210,6 +211,18 @@ internal static class Program
         Console.WriteLine();
         Console.WriteLine(_failures == 0 ? "ALL CHECKS PASSED" : $"{_failures} CHECK(S) FAILED");
         return _failures == 0 ? 0 : 1;
+    }
+
+    /// <summary>模组名取仓库根下唯一的工程名；取不到时退回目录名。</summary>
+    private static string ResolveModName(string repoRoot)
+    {
+        string[] projects = Directory.GetFiles(repoRoot, "*.csproj", SearchOption.TopDirectoryOnly);
+        if (projects.Length == 1)
+        {
+            return Path.GetFileNameWithoutExtension(projects[0]);
+        }
+
+        return Path.GetFileName(repoRoot.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
     }
 
     private static string Metadata(string key)
