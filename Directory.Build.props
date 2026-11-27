@@ -19,6 +19,9 @@
     <GenerateDependencyFile>false</GenerateDependencyFile>
     <DebugType>none</DebugType>
     <Deterministic>true</Deterministic>
+    <!-- 不要把 git 提交号写进 AssemblyInformationalVersion：否则同一份源码在不同提交上
+         会产出不同的二进制，dist/ 每次重建都会出现无意义的差异。 -->
+    <IncludeSourceRevisionInInformationalVersion>false</IncludeSourceRevisionInInformationalVersion>
     <NoWarn>CS0436;CS0169;CS0649;CS8632</NoWarn>
 
     <GameDir Condition="'$(GameDir)' == ''">D:/3rd-party-software/Steam/steamapps/common/Slay the Spire 2</GameDir>
