@@ -401,6 +401,11 @@ await RunManager.EnterRoomDebug(RoomType.Monster, MapPointType.Unassigned, encou
    否则客户端 current_id 会永远停在旧节点。
 6. **Idle 阶段核对的是“当前节点”**：各端此刻还没写回，基准必须是 `Tree.Current` 的 checksum/frontier，
    不是目标节点的。
+7. **根锚点会早于客户端的 `CombatBegan` 到**（v0.1.15 修复）：房主在自己的 `CombatBegan` 里就抓根节点并广播，
+   客户端这时还在进战斗房间，锚点只能挂起。v0.1.14 及之前 `OnCombatBegan` 会清空 `_pendingAnchors`，
+   根节点（`parent = 0`）一丢，后面所有锚点的父节点在本端都不存在，客户端整棵树永远是空的。
+   现在早到的锚点保留并重排重试窗口；父节点缺失时沿锚点父链挂到最近的已落地祖先（`mp_anchor_orphan`），
+   保证「收到过锚点就不会整体不可见」。同一处还修掉了 `OnAnchor` 把一个锚点排队两次的问题。
 
 ### 实测（v0.114.0，双实例 ENet 33771）
 

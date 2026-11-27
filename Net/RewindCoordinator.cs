@@ -81,6 +81,11 @@ internal sealed class RewindCoordinator
     private readonly List<PendingAnchor> _pendingAnchors = new List<PendingAnchor>();
     private readonly Dictionary<int, PendingNode> _pendingNodes = new Dictionary<int, PendingNode>();
 
+    // 客户端收到过的锚点父链（id → 房主那边记的父 id）。
+    // 正常路径用不到：只有某个锚点没能落地时，才靠它把后来的子孙挂到最近的已落地祖先上，
+    // 避免“父节点缺失 → 整棵子树在 UI 里彻底看不见”。
+    private readonly Dictionary<int, int> _anchorParents = new Dictionary<int, int>();
+
     // 客户端在“动作逻辑边界”抓的镜像快照：房主锚点稍后才到，
     // 这时候本端可能已经在执行下一个动作了，实时抓点必然对不上。
     // 缓存按 checksum 命中，命中即用、用完即删；只保留最近几条。
@@ -190,7 +195,6 @@ internal sealed class RewindCoordinator
             _active = true;
             _combatIndex++;
             _peers.Clear();
-            _pendingAnchors.Clear();
             _pendingNodes.Clear();
             ClearMirrorCache();
             _session = null;
@@ -203,8 +207,18 @@ internal sealed class RewindCoordinator
             _helloAttempts = 0;
             _nextHelloAtMs = 0;
 
-            // 锚点可能比本端的 CombatBegan 更早到（房主先一步抓了根节点）：
-            // 不要丢，统一把它们的重试窗口从现在开始重新计时。
+            // 锚点可能比本端的 CombatBegan 更早到（房主先一步抓了根节点，本端还在加载战斗房间）：
+            // **不能清空**。根节点的锚点一旦丢掉，房主后续所有节点的 parent 在本端都不存在，
+            // 建点会全部失败，客户端整棵回溯树永远是空的（只剩一句“本场战斗还没有节点”）。
+            // 上一场战斗残留的锚点在 OnCombatEnded / OnRunCleanUp 里已经清过，这里只重排父链、
+            // 把重试窗口从现在开始重新计时。
+            _anchorParents.Clear();
+            foreach (PendingAnchor pending in _pendingAnchors)
+            {
+                _anchorParents[pending.Message.NodeId] = pending.Message.ParentId;
+            }
+
+            int keptAnchors = _pendingAnchors.Count;
             ulong now = Now;
             foreach (PendingAnchor pending in _pendingAnchors)
             {
@@ -212,7 +226,14 @@ internal sealed class RewindCoordinator
             }
 
             ModLog.Info($"mp coordinator ready (role={(_net.IsHost ? "host" : "client")}, "
-                        + $"local={PlayerScope.LocalNetId}, peers={_net.Peers().Count})");
+                        + $"local={PlayerScope.LocalNetId}, peers={_net.Peers().Count}, "
+                        + $"kept_anchors={keptAnchors})");
+
+            if (keptAnchors > 0)
+            {
+                RewindRuntime.Instance.LogMpEvent("mp_anchor_kept",
+                    $"{keptAnchors} 个锚点早于本端 CombatBegan 到达，转入本场战斗重试", 0);
+            }
 
             if (_net.IsHost)
             {
@@ -245,6 +266,7 @@ internal sealed class RewindCoordinator
             _active = false;
             _pendingAnchors.Clear();
             _pendingNodes.Clear();
+            _anchorParents.Clear();
             ClearMirrorCache();
         }
         catch (Exception e)
@@ -272,6 +294,7 @@ internal sealed class RewindCoordinator
             _peers.Clear();
             _pendingAnchors.Clear();
             _pendingNodes.Clear();
+            _anchorParents.Clear();
             ClearMirrorCache();
             _net.Unregister();
         }
@@ -523,10 +546,12 @@ internal sealed class RewindCoordinator
             }
 
             // 超时：仍然占住这个 id，标成 partial（不可跳），保证两端编号空间一致。
+            // 父节点在本端缺失时不能直接放弃——那会让整棵子树在 UI 里连根都走不到。
+            int attachTo = ResolveAttachParent(pending.Message);
             string failed = $"锚点 #{pending.Message.NodeId} 未能在本端复现：{reason}";
             RewindRuntime.Instance.AddMirroredNode(
                 pending.Message.NodeId,
-                pending.Message.ParentId,
+                attachTo,
                 pending.Message.Label,
                 pending.Message.Kind,
                 pending.Message.Frontier,
@@ -543,6 +568,52 @@ internal sealed class RewindCoordinator
         }
     }
 
+    /// <summary>
+    /// 锚点的父节点在本端不存在时，沿“收到过的锚点父链”找最近的已落地祖先。
+    /// 找不到（父链也断了）就挂到现有的根上；树还是空的时候就让它自己当根。
+    ///
+    /// 这条路径只在同步已经出问题时才会走到：正常收到锚点的顺序与房主建点顺序一致，
+    /// 父节点一定先到。宁可把节点摆在一个可诊断的位置上（两端树指纹会不一致，剪枝会明确拒绝），
+    /// 也不要让整棵子树在 UI 里凭空消失。
+    /// </summary>
+    private int ResolveAttachParent(GrAnchorMessage anchor)
+    {
+        RewindTree tree = RewindRuntime.Instance.Tree;
+        int parentId = anchor.ParentId;
+        if (parentId == 0 || tree.Get(parentId) != null)
+        {
+            return parentId;
+        }
+
+        int cursor = parentId;
+        int guard = 0;
+        while (cursor != 0 && guard++ < 64)
+        {
+            if (tree.Get(cursor) != null)
+            {
+                RewindRuntime.Instance.LogMpEvent("mp_anchor_orphan",
+                    $"锚点 #{anchor.NodeId} 的父节点 #{anchor.ParentId} 不在本端，改挂到 #{cursor}",
+                    anchor.NodeId);
+                return cursor;
+            }
+
+            if (!_anchorParents.TryGetValue(cursor, out int next))
+            {
+                break;
+            }
+
+            cursor = next;
+        }
+
+        int rootId = tree.Root?.Id ?? 0;
+        RewindRuntime.Instance.LogMpEvent("mp_anchor_orphan",
+            rootId != 0
+                ? $"锚点 #{anchor.NodeId} 的整条父链都不在本端，改挂到根 #{rootId}"
+                : $"锚点 #{anchor.NodeId} 的整条父链都不在本端，本端还没有根：它为 root 占位",
+            anchor.NodeId);
+        return rootId;
+    }
+
     private bool TryBindAnchor(GrAnchorMessage anchor, out string reason)
     {
         reason = null;
@@ -551,7 +622,7 @@ internal sealed class RewindCoordinator
         RewindNode existing = runtime.Tree.Get(anchor.NodeId);
         if (existing != null)
         {
-            SendAnchorAck(anchor.NodeId, true, existing.Checksum, null);
+            AckExistingMirror(existing);
             return true;
         }
 
@@ -574,6 +645,14 @@ internal sealed class RewindCoordinator
                      out frontier,
                      out reason))
         {
+            return false;
+        }
+
+        // 校验和必须在建点之前核对：先建点再判失败会留下一个 checksum 与房主不同的镜像节点，
+        // 后续重试只会命中“已存在”分支把它 ack 成 ok，错误就此固化下来。
+        if (!force && anchor.Checksum != 0 && checksum != anchor.Checksum)
+        {
+            reason = $"checksum 不一致（房主 {anchor.Checksum:x8} / 本端 {checksum:x8}）";
             return false;
         }
 
@@ -611,13 +690,6 @@ internal sealed class RewindCoordinator
                 $"node #{node.Id} took canon from #{anchor.DemoteOldId}, moved={movedChildren}", node.Id);
         }
 
-        if (!force && anchor.Checksum != 0 && checksum != anchor.Checksum)
-        {
-            // 从严格意义上讲 TryCaptureMirrorPoint 已经挡住了；这里只做二次确认。
-            reason = $"checksum 不一致（房主 {anchor.Checksum:x8} / 本端 {checksum:x8}）";
-            return false;
-        }
-
         SendAnchorAck(anchor.NodeId, true, checksum, null);
         return true;
     }
@@ -631,6 +703,18 @@ internal sealed class RewindCoordinator
             Checksum = checksum,
             Reason = reason ?? string.Empty
         });
+    }
+
+    /// <summary>
+    /// 锚点指向的节点已经镜像过：回报本端的真实状态。
+    /// partial（没抓成快照）必须报 ok=false —— 否则房主会把它标成 shared/可跳，
+    /// 而本端根本没有可写回的 memento，跳过去必然失败。重复投递的锚点也走这里。
+    /// </summary>
+    private void AckExistingMirror(RewindNode node)
+    {
+        bool ok = node.Snapshot != null
+                  && !string.Equals(node.State, "partial", StringComparison.Ordinal);
+        SendAnchorAck(node.Id, ok, node.Checksum, ok ? null : $"本端节点 #{node.Id} 是 {node.State}");
     }
 
     private void OnAnchorAck(ulong senderId, GrAnchorAckMessage message)
@@ -2033,9 +2117,10 @@ internal sealed class RewindCoordinator
 
         NotePeer(senderId, message.Protocol, null);
 
-        if (RewindRuntime.Instance.Tree.Get(message.NodeId) != null)
+        RewindNode existing = RewindRuntime.Instance.Tree.Get(message.NodeId);
+        if (existing != null)
         {
-            SendAnchorAck(message.NodeId, true, RewindRuntime.Instance.Tree.Get(message.NodeId).Checksum, null);
+            AckExistingMirror(existing);
             return;
         }
 
@@ -2044,12 +2129,17 @@ internal sealed class RewindCoordinator
             return;
         }
 
-        _pendingAnchors.Add(new PendingAnchor
+        // 房主的根节点锚点通常比本端的 CombatBegan 早到（本端还在进战斗房间）。
+        // 这时挂起、等 Pump 在战斗就绪后重试；早期版本在这里被 OnCombatBegan 清掉，
+        // 结果根节点缺失、后续锚点全部建点失败，客户端树一直是空的。
+        if (!_active)
         {
-            Message = message,
-            DeadlineMs = Now + AnchorTimeoutMs
-        });
+            RewindRuntime.Instance.LogMpEvent("mp_anchor_early",
+                $"node #{message.NodeId} 早于本端 CombatBegan 到达，先挂起等战斗就绪",
+                message.NodeId);
+        }
 
+        _anchorParents[message.NodeId] = message.ParentId;
         _pendingAnchors.Add(new PendingAnchor
         {
             Message = message,
